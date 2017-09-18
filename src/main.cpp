@@ -103,53 +103,53 @@ int main() {
           */
 
           vector<double> waypoints_x;
-		  vector<double> waypoints_y;
-		  // convert from map coordinate to car coordinates
-		  for (int i = 0; i < ptsx.size(); i++) {
-		    double dx = ptsx[i] - px;
-		    double dy = ptsy[i] - py;
-		    waypoints_x.push_back(dx * cos(-psi) - dy * sin(-psi));
-		    waypoints_y.push_back(dx * sin(-psi) + dy * cos(-psi));
-		  }
+          vector<double> waypoints_y;
+          // convert from map coordinate to car coordinates
+          for (int i = 0; i < ptsx.size(); i++) {
+            double dx = ptsx[i] - px;
+            double dy = ptsy[i] - py;
+            waypoints_x.push_back(dx * cos(-psi) - dy * sin(-psi));
+            waypoints_y.push_back(dx * sin(-psi) + dy * cos(-psi));
+          }
 
           // std vector to Eigen Vector
-		  Eigen::Map<Eigen::VectorXd> ptsx_car(&waypoints_x[0], 6);
-		  Eigen::Map<Eigen::VectorXd> ptsy_car(&waypoints_y[0], 6);
+          Eigen::Map<Eigen::VectorXd> ptsx_car(&waypoints_x[0], 6);
+          Eigen::Map<Eigen::VectorXd> ptsy_car(&waypoints_y[0], 6);
 
-		  // compute the coefficients for 3rd order line fitting
-		  auto coeffs = polyfit(ptsx_car, ptsy_car, 3);
+          // compute the coefficients for 3rd order line fitting
+          auto coeffs = polyfit(ptsx_car, ptsy_car, 3);
 
-		  // state in car coordniates
-		  Eigen::VectorXd state(6); // {x, y, psi, v, cte, epsi}
+          // state in car coordniates
+          Eigen::VectorXd state(6); // {x, y, psi, v, cte, epsi}
 
-		  // estimate the prospective position of the car
-		  // based on its current speed and heading direction
-		  // by propagating the position of the car forward for the latency span
+          // estimate the prospective position of the car
+          // based on its current speed and heading direction
+          // by propagating the position of the car forward for the latency span
 
-		  // Recall the equations for the model:
-		  // x_[t] = x[t-1] + v[t-1] * cos(psi[t-1]) * dt
-		  // y_[t] = y[t-1] + v[t-1] * sin(psi[t-1]) * dt
-		  // psi_[t] = psi[t-1] + v[t-1] / Lf * delta[t-1] * dt
-		  // v_[t] = v[t-1] + a[t-1] * dt
-		  // cte[t] = f(x[t-1]) - y[t-1] + v[t-1] * sin(epsi[t-1]) * dt
-		  // epsi[t] = psi[t] - psides[t-1] + v[t-1] * delta[t-1] / Lf * dt
-		  double latency = 0.1;
-		  v *= 0.44704;                             // convert from mph to m/s
-		  px = 0 + v * cos(0) * latency;            // px0 = 0, due to the car coordinate system
-		  py = 0 + v * sin(0) * latency;;           // py0 = 0,
-		  psi = 0 - v / Lf * steer_angle * latency;   // psi0 = 0
-		  double epsi = 0 - atan(coeffs[1]) - v / Lf * steer_angle * latency;
-		  double cte = polyeval(coeffs, 0) - 0 + v * sin(0 - atan(coeffs[1])) * latency;
-		  v += acceleration * latency;
-		  state << px, py, psi, v, cte, epsi;
+          // Recall the equations for the model:
+          // x_[t] = x[t-1] + v[t-1] * cos(psi[t-1]) * dt
+          // y_[t] = y[t-1] + v[t-1] * sin(psi[t-1]) * dt
+          // psi_[t] = psi[t-1] + v[t-1] / Lf * delta[t-1] * dt
+          // v_[t] = v[t-1] + a[t-1] * dt
+          // cte[t] = f(x[t-1]) - y[t-1] + v[t-1] * sin(epsi[t-1]) * dt
+          // epsi[t] = psi[t] - psides[t-1] + v[t-1] * delta[t-1] / Lf * dt
+          double latency = 0.1;
+          v *= 0.44704;                             // convert from mph to m/s
+          px = 0 + v * cos(0) * latency;            // px0 = 0, due to the car coordinate system
+          py = 0 + v * sin(0) * latency;;           // py0 = 0,
+          psi = 0 - v / Lf * steer_angle * latency;   // psi0 = 0
+          double epsi = 0 - atan(coeffs[1]) - v / Lf * steer_angle * latency;
+          double cte = polyeval(coeffs, 0) - 0 + v * sin(0 - atan(coeffs[1])) * latency;
+          v += acceleration * latency;
+          state << px, py, psi, v, cte, epsi;
 #if 0
-		  double cte = polyeval(coeffs, 0);
-		  double epsi = -atan(coeffs[1]);
-		  state << 0, 0, 0, v, cte, epsi;
+          double cte = polyeval(coeffs, 0);
+          double epsi = -atan(coeffs[1]);
+          state << 0, 0, 0, v, cte, epsi;
 #endif
 
-		  // call MPC solver
-		  auto vars = mpc.Solve(state, coeffs);
+          // call MPC solver
+          auto vars = mpc.Solve(state, coeffs);
 
           double steer_value;
           double throttle_value;
@@ -163,7 +163,7 @@ int main() {
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
-          //Display the MPC predicted trajectory 
+          //Display the MPC predicted trajectory
           vector<double> mpc_x_vals;
           vector<double> mpc_y_vals;
 
@@ -173,10 +173,10 @@ int main() {
           // Display predicted points by MPC.
           // points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
-		  for (size_t i=2; i < vars.size(); i=i+2) { //the first two are steer angle and throttle value
-		    mpc_x_vals.push_back(vars[i]);
-		    mpc_y_vals.push_back(vars[i+1]);
-		  }
+          for (size_t i=2; i < vars.size(); i=i+2) { //the first two are steer angle and throttle value
+            mpc_x_vals.push_back(vars[i]);
+            mpc_y_vals.push_back(vars[i+1]);
+          }
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
