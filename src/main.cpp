@@ -92,14 +92,70 @@ int main() {
           double psi = j[1]["psi"];
           double v = j[1]["speed"];
 
+          double steer_angle = j[1]["steering_angle"];  // steering angle is in the opposite direction
+          double acceleration = j[1]["throttle"];
+
           /*
           * TODO: Calculate steering angle and throttle using MPC.
           *
           * Both are in between [-1, 1].
           *
           */
+
+          vector<double> waypoints_x;
+		  vector<double> waypoints_y;
+		  // convert from map coordinate to car coordinates
+		  for (int i = 0; i < ptsx.size(); i++) {
+		    double dx = ptsx[i] - px;
+		    double dy = ptsy[i] - py;
+		    waypoints_x.push_back(dx * cos(-psi) - dy * sin(-psi));
+		    waypoints_y.push_back(dx * sin(-psi) + dy * cos(-psi));
+		  }
+
+          // std vector to Eigen Vector
+		  Eigen::Map<Eigen::VectorXd> ptsx_car(&waypoints_x[0], 6);
+		  Eigen::Map<Eigen::VectorXd> ptsy_car(&waypoints_y[0], 6);
+
+		  // compute the coefficients for 3rd order line fitting
+		  auto coeffs = polyfit(ptsx_car, ptsy_car, 3);
+
+		  // state in car coordniates
+		  Eigen::VectorXd state(6); // {x, y, psi, v, cte, epsi}
+
+		  // estimate the prospective position of the car
+		  // based on its current speed and heading direction
+		  // by propagating the position of the car forward for the latency span
+
+		  // Recall the equations for the model:
+		  // x_[t] = x[t-1] + v[t-1] * cos(psi[t-1]) * dt
+		  // y_[t] = y[t-1] + v[t-1] * sin(psi[t-1]) * dt
+		  // psi_[t] = psi[t-1] + v[t-1] / Lf * delta[t-1] * dt
+		  // v_[t] = v[t-1] + a[t-1] * dt
+		  // cte[t] = f(x[t-1]) - y[t-1] + v[t-1] * sin(epsi[t-1]) * dt
+		  // epsi[t] = psi[t] - psides[t-1] + v[t-1] * delta[t-1] / Lf * dt
+		  double latency = 0.1;
+		  v *= 0.44704;                             // convert from mph to m/s
+		  px = 0 + v * cos(0) * latency;            // px0 = 0, due to the car coordinate system
+		  py = 0 + v * sin(0) * latency;;           // py0 = 0,
+		  psi = 0 - v / Lf * steer_angle * latency;   // psi0 = 0
+		  double epsi = 0 - atan(coeffs[1]) - v / Lf * steer_angle * latency;
+		  double cte = polyeval(coeffs, 0) - 0 + v * sin(0 - atan(coeffs[1])) * latency;
+		  v += acceleration * latency;
+		  state << px, py, psi, v, cte, epsi;
+#if 0
+		  double cte = polyeval(coeffs, 0);
+		  double epsi = -atan(coeffs[1]);
+		  state << 0, 0, 0, v, cte, epsi;
+#endif
+
+		  // call MPC solver
+		  auto vars = mpc.Solve(state, coeffs);
+
           double steer_value;
           double throttle_value;
+
+          steer_value = -vars[0] / max_steer;
+          throttle_value = vars[1];
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
@@ -114,6 +170,14 @@ int main() {
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
 
+          // Display predicted points by MPC.
+          // points are in reference to the vehicle's coordinate system
+          // the points in the simulator are connected by a Green line
+		  for (size_t i=2; i < vars.size(); i=i+2) { //the first two are steer angle and throttle value
+		    mpc_x_vals.push_back(vars[i]);
+		    mpc_y_vals.push_back(vars[i+1]);
+		  }
+
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
 
@@ -124,9 +188,14 @@ int main() {
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
 
+          for(int i=1; i< ptsx_car.size(); i++){ // index staring from 1 for visualize
+              // only the reference point which is in the front of the car
+              next_x_vals.push_back(ptsx_car[i]);
+              next_y_vals.push_back(ptsy_car[i]);
+          }
+
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
-
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;

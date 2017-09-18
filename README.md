@@ -3,6 +3,68 @@ Self-Driving Car Engineer Nanodegree Program
 
 ---
 
+[image1]: ./MPCdemo80mph.gif
+
+![alt text][image1]
+
+
+## Goal
+
+The Goal of the project is to use Model Predictive Control (MPC) to drive a car in a game simulator. The server sends reference waypoints (yellow line in the demo video) via websocket, we want to develop a nonlinear model predictive controller (NMPC) to control the steer angle as well as the throttle of the car given the current state of the car. Moreover, the solution must be able to handle 100ms latency in actuation as what happens in the real world.
+
+## The Model
+
+The model is a kinematic model which neglects all dynamical effects such as tire forces, gravity, and mass. The model is non-linear because it accounts for heading direction. 
+
+**state**:
+- `x,y` the x and y coordinates of the car
+- `psi` the heading direction
+- `v` velocity
+- `cte` the cross-track error
+- `epsi` the orientation error
+- `Lf` the length from front to CoG that has a similar radius
+
+**actuators**
+- `delta` steering angle
+- `a` acceleration
+
+The outputs are acceleration and steering angle. As the equations below, the NMPC model calculates the state for the next timestamp based on the state and actuations from the previous timestep.
+
+[image2]: ./VM.png
+
+![alt text][image2]
+
+
+## Timestep Length and Elapsed Duration (N & dt)
+- N = 10
+- dt = 0.1
+
+The product of N and dt defines the prediction horizon. In case of driving the car, the length of prediction horizon should be in seconds at most because the environment is always changing thus any data input beyond that time range won't contribute much into the prediction. In general, short prediction horizons means lower latency in response but maybe instable and inaccurate. Longer prediction horizons have smoother controls but introduce more latency.
+
+The value I chose is from experiment. `dt` should take into account the latency of the actuactor, in this case, 100ms.
+`N` should at least be 10 when driving in a high speed to smooth out instable steerings.
+
+## Polynomial Fitting and MPC Preprocessing
+Preprocessing is needed to convert from map global coordinate to car's coordinate, see the description [here](https://github.com/udacity/CarND-MPC-Project/blob/master/DATA.md)
+```
+carx =   cos(psi) * (ptsx[i] - x) + sin(psi) * (ptsy[i] - y);
+cary =  -sin(psi) * (ptsx[i] - x) + cos(psi) * (ptsy[i] - y);
+```
+
+main.cpp: 108 has the logic to do the convervion based on the above logic; then a 3rd order polynomial is fitted to waypoints.
+
+## Model Predictive Control with Latency
+In this project 100 millisecond latency is introduced to mimic real world scenario where the actutor output will take some time to be actually propagated and executed. To handle this latency, I tried two different approaches:
+
+- modify the MPC equations to account for the 100 ms latency, which is one timestamp later; i.e: shift one step in timestamp to use previous actuation value
+- estimate the car's states for after 100ms before sending it to MPC; we can use the same NMPC update rule to calculate the expected state 100 ms later; then solve the control problem starting from that position.
+
+Also, in high speed scenario, I need to adjust the weight in the cost function to punish / minimize cte, epsi, velocity gap, change rate of delta and acceleration to make the driving smooth and stable.
+
+I chose to submit with the 2nd approach as it worked better in high speed with steering and its derivative penalized. The settings of those weights above can be found in MPC.cpp: 40.
+
+---
+
 ## Dependencies
 
 * cmake >= 3.5
